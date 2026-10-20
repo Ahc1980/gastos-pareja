@@ -34,7 +34,9 @@ function createSupabaseStore(createClient) {
     },
     async signUp(email, password, name) {
       const data = await run(db.auth.signUp({ email, password, options: { data: { name } } }));
-      return { needsConfirmation: !data.session };
+      if (data.session) return { needsConfirmation: false };
+      const { error } = await db.auth.signInWithPassword({ email, password });
+      return { needsConfirmation: !!error };
     },
     async signOut() {
       await db.auth.signOut();

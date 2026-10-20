@@ -35,6 +35,10 @@ create table if not exists public.settlements (
 create index if not exists expenses_date_idx on public.expenses (date desc);
 create index if not exists settlements_date_idx on public.settlements (date desc);
 
+grant usage on schema public to anon, authenticated;
+grant select, update on public.profiles to authenticated;
+grant select, insert, update, delete on public.expenses, public.settlements to authenticated;
+
 -- Solo los integrantes (máximo 2) pueden ver y editar datos.
 create or replace function public.is_member()
 returns boolean
@@ -69,6 +73,24 @@ begin
   return new;
 end;
 $$;
+
+-- Confirma el email automáticamente (la app es privada y limitada a dos usuarios).
+create or replace function public.auto_confirm_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  new.email_confirmed_at := coalesce(new.email_confirmed_at, now());
+  return new;
+end;
+$$;
+
+drop trigger if exists before_auth_user_created on auth.users;
+create trigger before_auth_user_created
+  before insert on auth.users
+  for each row execute function public.auto_confirm_user();
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
