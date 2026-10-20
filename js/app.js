@@ -1,4 +1,4 @@
-import { createStore, isDemo, toISODate } from './store.js';
+const { createStore, isDemo, toISODate } = await import(`./store.js${new URL(import.meta.url).search}`);
 
 const CATEGORIES = [
   { id: 'supermercado', label: 'Súper', emoji: '🛒', color: '#10b981' },

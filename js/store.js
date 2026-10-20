@@ -1,4 +1,4 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+const { SUPABASE_URL, SUPABASE_ANON_KEY } = await import(`./config.js${new URL(import.meta.url).search}`);
 
 export const isDemo = !SUPABASE_URL || !SUPABASE_ANON_KEY;
 
