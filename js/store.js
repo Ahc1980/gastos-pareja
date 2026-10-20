@@ -21,6 +21,17 @@ async function run(promise) {
 
 function createSupabaseStore(createClient) {
   const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // Supabase devuelve como máximo 1000 filas por consulta: se pide de a páginas.
+  async function fetchAll(table) {
+    const rows = [];
+    for (let from = 0; ; from += 1000) {
+      const page = await run(db.from(table).select('*')
+        .order('date', { ascending: false }).order('created_at', { ascending: false }).order('id')
+        .range(from, from + 999));
+      rows.push(...page);
+      if (page.length < 1000) return rows;
+    }
+  }
   return {
     async currentUserId() {
       const { data } = await db.auth.getSession();
@@ -44,8 +55,8 @@ function createSupabaseStore(createClient) {
     async loadAll() {
       const [profiles, expenses, settlements] = await Promise.all([
         run(db.from('profiles').select('*').order('created_at')),
-        run(db.from('expenses').select('*').order('date', { ascending: false }).order('created_at', { ascending: false })),
-        run(db.from('settlements').select('*').order('date', { ascending: false }).order('created_at', { ascending: false })),
+        fetchAll('expenses'),
+        fetchAll('settlements'),
       ]);
       return { profiles, expenses, settlements };
     },
