@@ -13,6 +13,26 @@ const CATEGORIES = [
   { id: 'ropa', label: 'Ropa', emoji: '👕', color: '#6366f1' },
   { id: 'otros', label: 'Otros', emoji: '📦', color: '#64748b' },
 ];
+const DEFAULT_SUBS = {
+  servicios: ['Agua', 'Basura', 'Calefacción', 'Electricidad', 'Limpieza', 'TV/teléfono/Internet', 'Servicios varios', 'Otro'],
+  casa: ['Alquiler', 'Hipoteca', 'Electrónica', 'Mantenimiento', 'Muebles', 'Suministros del hogar', 'Otro'],
+  comida: ['Restaurantes', 'Delivery', 'Otro'],
+  salidas: ['Entretenimiento', 'Licor', 'Música', 'Deportes', 'Hotel'],
+  transporte: ['Coche', 'Estacionamiento', 'Gasolina', 'Taxi', 'Autobús/tren', 'Avión', 'Otro'],
+  salud: ['Gastos médicos', 'Farmacia'],
+  chicos: ['Guardería', 'Formación'],
+  otros: ['General', 'Regalos', 'Seguro', 'Otro'],
+};
+const subsFor = (cat) => {
+  const defaults = DEFAULT_SUBS[cat] || [];
+  const extra = [
+    ...state.subcategories.filter((x) => x.category === cat).map((x) => x.name),
+    ...state.expenses.filter((x) => x.category === cat && x.subcategory).map((x) => x.subcategory),
+  ];
+  const others = [...new Set(extra)].filter((n) => !defaults.includes(n)).sort((x, y) => x.localeCompare(y, 'es'));
+  const hasOtro = defaults.includes('Otro') || others.includes('Otro');
+  return [...defaults.filter((n) => n !== 'Otro'), ...others.filter((n) => n !== 'Otro'), ...(hasOtro ? ['Otro'] : [])];
+};
 const catById = (id) => CATEGORIES.find((c) => c.id === id) || CATEGORIES[CATEGORIES.length - 1];
 
 const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -43,6 +63,7 @@ const state = {
   profiles: [],
   expenses: [],
   settlements: [],
+  subcategories: [],
   tab: 'inicio',
   month: toISODate(new Date()).slice(0, 7),
   search: '',
@@ -313,7 +334,7 @@ function itemHtml(m) {
   return `<button class="item" data-edit-expense="${esc(m.id)}">
     <span class="emoji" style="background:${c.color}22">${c.emoji}</span>
     <span class="main"><div class="title">${esc(m.description)}</div>
-      <div class="sub">Pagó ${esc(payer.name)} · ${esc(splitText(m))}</div></span>
+      <div class="sub">${m.subcategory ? `${esc(m.subcategory)} · ` : ''}Pagó ${esc(payer.name)} · ${esc(splitText(m))}</div></span>
     <span class="right"><div class="total">${fmt(m.amount)}</div><div class="effect">${effect}</div></span>
   </button>`;
 }
@@ -333,7 +354,7 @@ function viewMovements() {
   if (q) {
     list = list.filter((m) => {
       const text = m.kind === 'expense'
-        ? `${m.description} ${catById(m.category).label} ${profile(m.paid_by).name}`
+        ? `${m.description} ${catById(m.category).label} ${m.subcategory || ''} ${profile(m.paid_by).name}`
         : `${m.note || ''} pago ${profile(m.from_user).name} ${profile(m.to_user).name}`;
       return text.toLowerCase().includes(q);
     });
@@ -510,6 +531,7 @@ function openExpense(existing) {
       <div class="field"><label>Categoría</label>
         <div class="chips" id="cats">${CATEGORIES.map((c) => `<button type="button" class="chip ${c.id === e.category ? 'on' : ''}" data-cat="${c.id}"><span class="e">${c.emoji}</span>${esc(c.label)}</button>`).join('')}</div>
       </div>
+      <div class="field" id="sub-field"></div>
       <div class="trend" id="cat-trend"></div>
       <div class="field"><label>¿Quién pagó?</label>${seg('paid_by', state.profiles.map((p) => [p.id, p.id === state.me ? `${p.name} (yo)` : p.name]), e.paid_by)}</div>
       <div class="field"><label>¿Cómo se divide?</label><div id="split-box"></div>
@@ -561,15 +583,38 @@ function openExpense(existing) {
       const end = monthKey(form.elements.date.value || toISODate(new Date()));
       const keys = [2, 1, 0].map((i) => shiftMonth(end, -i));
       const totals = keys.map((k) => state.expenses
-        .filter((x) => x.category === e.category && monthKey(x.date) === k)
+        .filter((x) => x.category === e.category && (!e.subcategory || x.subcategory === e.subcategory) && monthKey(x.date) === k)
         .reduce((sum, x) => sum + Number(x.amount), 0));
       const max = Math.max(...totals, 1);
       const cat = catById(e.category);
-      root.querySelector('#cat-trend').innerHTML = `<div class="trend-title">Gasto en ${cat.emoji} ${esc(cat.label)} · últimos 3 meses</div>
+      root.querySelector('#cat-trend').innerHTML = `<div class="trend-title">Gasto en ${cat.emoji} ${esc(cat.label)}${e.subcategory ? ` › ${esc(e.subcategory)}` : ''} · últimos 3 meses</div>
         ${keys.map((k, i) => `<div class="trend-row"><span class="m">${shortMonth(k)}</span>
           <span class="bar"><span style="width:${(totals[i] / max) * 100}%;background:${cat.color}"></span></span>
           <span class="v">${fmt(totals[i])}</span></div>`).join('')}`;
     };
+    const renderSub = () => {
+      const subs = subsFor(e.category);
+      if (e.subcategory && !subs.includes(e.subcategory)) subs.push(e.subcategory);
+      const box = root.querySelector('#sub-field');
+      box.innerHTML = `<label>Subcategoría</label><select id="sub-select">
+        <option value="">— Sin subcategoría —</option>
+        ${subs.map((n) => `<option value="${esc(n)}" ${n === e.subcategory ? 'selected' : ''}>${esc(n)}</option>`).join('')}
+        <option value="__new">➕ Agregar nueva…</option></select>`;
+      box.querySelector('select').addEventListener('change', async (ev) => {
+        if (ev.target.value !== '__new') { e.subcategory = ev.target.value || null; renderTrend(); return; }
+        const name = (prompt(`Nueva subcategoría para ${catById(e.category).label}:`) || '').trim().slice(0, 40);
+        if (name) {
+          try {
+            await state.store.addSubcategory(e.category, name);
+            if (!state.subcategories.some((x) => x.category === e.category && x.name === name)) state.subcategories.push({ category: e.category, name });
+            e.subcategory = name;
+          } catch (err) { toast(err.message); }
+        }
+        renderSub();
+        renderTrend();
+      });
+    };
+    renderSub();
     renderTrend();
     form.elements.date.addEventListener('change', renderTrend);
     renderSplit();
@@ -580,6 +625,8 @@ function openExpense(existing) {
       if (!b) return;
       e.category = b.dataset.cat;
       root.querySelectorAll('[data-cat]').forEach((x) => x.classList.toggle('on', x === b));
+      e.subcategory = null;
+      renderSub();
       renderTrend();
     });
     form.onsubmit = async (ev) => {
@@ -593,6 +640,7 @@ function openExpense(existing) {
           description: form.elements.description.value.trim(),
           amount: Math.round(Number(amountInput.value) * 100) / 100,
           category: e.category,
+          subcategory: e.subcategory || null,
           paid_by: e.paid_by,
           payer_share_pct: e.payer_share_pct,
         });

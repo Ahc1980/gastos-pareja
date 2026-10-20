@@ -53,17 +53,18 @@ function createSupabaseStore(createClient) {
       await db.auth.signOut();
     },
     async loadAll() {
-      const [profiles, expenses, settlements] = await Promise.all([
+      const [profiles, expenses, settlements, subcategories] = await Promise.all([
         run(db.from('profiles').select('*').order('created_at')),
         fetchAll('expenses'),
         fetchAll('settlements'),
+        run(db.from('subcategories').select('*').order('name')),
       ]);
-      return { profiles, expenses, settlements };
+      return { profiles, expenses, settlements, subcategories };
     },
     async saveExpense(e) {
       const row = {
         date: e.date, description: e.description, amount: e.amount,
-        category: e.category, paid_by: e.paid_by, payer_share_pct: e.payer_share_pct,
+        category: e.category, subcategory: e.subcategory || null, paid_by: e.paid_by, payer_share_pct: e.payer_share_pct,
       };
       if (e.id) await run(db.from('expenses').update(row).eq('id', e.id));
       else await run(db.from('expenses').insert(row));
@@ -82,11 +83,15 @@ function createSupabaseStore(createClient) {
     async updateProfile(id, fields) {
       await run(db.from('profiles').update(fields).eq('id', id));
     },
+    async addSubcategory(category, name) {
+      await run(db.from('subcategories').upsert({ category, name }, { onConflict: 'category,name', ignoreDuplicates: true }));
+    },
     subscribe(cb) {
       db.channel('cambios')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, cb)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'settlements' }, cb)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, cb)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'subcategories' }, cb)
         .subscribe();
     },
   };
@@ -147,7 +152,7 @@ function createDemoStore() {
     async signOut() { state.me = null; save(); authCb(null); },
     async loadAll() {
       const copy = structuredClone(state);
-      return { profiles: copy.profiles, expenses: sortDesc(copy.expenses), settlements: sortDesc(copy.settlements) };
+      return { profiles: copy.profiles, expenses: sortDesc(copy.expenses), settlements: sortDesc(copy.settlements), subcategories: copy.subcategories || [] };
     },
     async saveExpense(e) {
       if (e.id) Object.assign(state.expenses.find((x) => x.id === e.id), e);
@@ -161,6 +166,11 @@ function createDemoStore() {
       save();
     },
     async deleteSettlement(sid) { state.settlements = state.settlements.filter((x) => x.id !== sid); save(); },
+    async addSubcategory(category, name) {
+      state.subcategories = state.subcategories || [];
+      if (!state.subcategories.some((x) => x.category === category && x.name === name)) state.subcategories.push({ id: id(), category, name });
+      save();
+    },
     async updateProfile(pid, fields) { Object.assign(state.profiles.find((p) => p.id === pid), fields); save(); },
     subscribe() {},
     resetDemo() { state = demoSeed(); save(); },

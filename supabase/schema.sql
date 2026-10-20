@@ -32,12 +32,23 @@ create table if not exists public.settlements (
   check (from_user <> to_user)
 );
 
+alter table public.expenses add column if not exists subcategory text;
+
+-- Subcategorías agregadas por los usuarios (las de siempre vienen en la app).
+create table if not exists public.subcategories (
+  id uuid primary key default gen_random_uuid(),
+  category text not null,
+  name text not null,
+  created_at timestamptz not null default now(),
+  unique (category, name)
+);
+
 create index if not exists expenses_date_idx on public.expenses (date desc);
 create index if not exists settlements_date_idx on public.settlements (date desc);
 
 grant usage on schema public to anon, authenticated;
 grant select, update on public.profiles to authenticated;
-grant select, insert, update, delete on public.expenses, public.settlements to authenticated;
+grant select, insert, update, delete on public.expenses, public.settlements, public.subcategories to authenticated;
 
 -- Solo los integrantes (máximo 2) pueden ver y editar datos.
 create or replace function public.is_member()
@@ -100,6 +111,7 @@ create trigger on_auth_user_created
 alter table public.profiles enable row level security;
 alter table public.expenses enable row level security;
 alter table public.settlements enable row level security;
+alter table public.subcategories enable row level security;
 
 drop policy if exists "members read profiles" on public.profiles;
 create policy "members read profiles" on public.profiles
@@ -115,6 +127,10 @@ create policy "members all expenses" on public.expenses
 
 drop policy if exists "members all settlements" on public.settlements;
 create policy "members all settlements" on public.settlements
+  for all to authenticated using (public.is_member()) with check (public.is_member());
+
+drop policy if exists "members all subcategories" on public.subcategories;
+create policy "members all subcategories" on public.subcategories
   for all to authenticated using (public.is_member()) with check (public.is_member());
 
 -- Actualización en tiempo real (lo que carga uno lo ve el otro al instante)
