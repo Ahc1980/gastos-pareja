@@ -510,6 +510,7 @@ function openExpense(existing) {
       <div class="field"><label>Categoría</label>
         <div class="chips" id="cats">${CATEGORIES.map((c) => `<button type="button" class="chip ${c.id === e.category ? 'on' : ''}" data-cat="${c.id}"><span class="e">${c.emoji}</span>${esc(c.label)}</button>`).join('')}</div>
       </div>
+      <div class="trend" id="cat-trend"></div>
       <div class="field"><label>¿Quién pagó?</label>${seg('paid_by', state.profiles.map((p) => [p.id, p.id === state.me ? `${p.name} (yo)` : p.name]), e.paid_by)}</div>
       <div class="field"><label>¿Cómo se divide?</label><div id="split-box"></div>
         <div id="custom-box" style="margin-top:10px"></div>
@@ -556,6 +557,21 @@ function openExpense(existing) {
       renderCustom();
       updateHint();
     };
+    const renderTrend = () => {
+      const end = monthKey(form.elements.date.value || toISODate(new Date()));
+      const keys = [2, 1, 0].map((i) => shiftMonth(end, -i));
+      const totals = keys.map((k) => state.expenses
+        .filter((x) => x.category === e.category && monthKey(x.date) === k)
+        .reduce((sum, x) => sum + Number(x.amount), 0));
+      const max = Math.max(...totals, 1);
+      const cat = catById(e.category);
+      root.querySelector('#cat-trend').innerHTML = `<div class="trend-title">Gasto en ${cat.emoji} ${esc(cat.label)} · últimos 3 meses</div>
+        ${keys.map((k, i) => `<div class="trend-row"><span class="m">${shortMonth(k)}</span>
+          <span class="bar"><span style="width:${(totals[i] / max) * 100}%;background:${cat.color}"></span></span>
+          <span class="v">${fmt(totals[i])}</span></div>`).join('')}`;
+    };
+    renderTrend();
+    form.elements.date.addEventListener('change', renderTrend);
     renderSplit();
     bindSeg(root, 'paid_by', (v) => { e.paid_by = v; renderSplit(); });
     amountInput.addEventListener('input', updateHint);
@@ -564,6 +580,7 @@ function openExpense(existing) {
       if (!b) return;
       e.category = b.dataset.cat;
       root.querySelectorAll('[data-cat]').forEach((x) => x.classList.toggle('on', x === b));
+      renderTrend();
     });
     form.onsubmit = async (ev) => {
       ev.preventDefault();
